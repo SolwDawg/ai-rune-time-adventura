@@ -169,7 +169,8 @@ npm install
 ```
 
 Copy `.env.example` into `.env` and set the model id currently loaded in LM
-Studio.
+Studio. `npm start` loads `.env` automatically; environment variables supplied
+by the shell or process manager take precedence over values in `.env`.
 
 Run tests:
 
@@ -218,6 +219,37 @@ Start local services in this order:
 The backend remains the only service Unity calls. AI runtime can be stopped and
 restarted independently; backend AI calls fall back while it is unavailable.
 
+## Run This Machine as the AI Runtime Server
+
+Use this mode when `Adventura-backend` runs on a separate server and must call
+the AI runtime hosted on this machine.
+
+In this machine's `.env`:
+
+```text
+AI_RUNTIME_HOST=0.0.0.0
+AI_RUNTIME_PORT=3100
+AI_RUNTIME_AUTH_TOKEN=<shared-private-token>
+AI_LLM_BASE_URL=http://localhost:1234/v1
+```
+
+Keep LM Studio or the OpenAI-compatible provider bound locally unless it must be
+separately exposed. The remote backend should call this runtime, not LM Studio
+directly.
+
+On the backend server:
+
+```text
+AI_RUNTIME_BASE_URL=http://<this-machine-ip-or-dns>:3100
+AI_RUNTIME_AUTH_TOKEN=<same-shared-private-token>
+```
+
+Prefer a VPN/private network or a tunnel with access controls. If using public
+port forwarding, allow inbound TCP `3100` only from the backend server IP when
+possible. Do not expose the AI runtime without `AI_RUNTIME_AUTH_TOKEN`.
+The runtime refuses startup when `AI_RUNTIME_HOST` binds outside localhost and
+`AI_RUNTIME_AUTH_TOKEN` is empty.
+
 ## PowerShell Smoke Checks
 
 Check LM Studio:
@@ -255,6 +287,9 @@ $dialogueBody = @{
 Invoke-RestMethod -Uri 'http://127.0.0.1:3100/v1/npc-dialogue' -Method Post -Headers $headers -ContentType 'application/json' -Body $dialogueBody
 ```
 
+From the backend server or another allowed machine, replace `127.0.0.1` with
+this machine's reachable IP or DNS name.
+
 ## Deployment Notes
 
 - Run `Adventura-backend` and `Adventura-ai-runtime` as separate processes.
@@ -269,7 +304,8 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:3100/v1/npc-dialogue' -Method Post -Hea
 | Name | Default | Purpose |
 | --- | --- | --- |
 | `AI_RUNTIME_PORT` | `3100` | HTTP port for this private runtime. |
-| `AI_RUNTIME_AUTH_TOKEN` | empty | Optional bearer token required by private endpoints when set. |
+| `AI_RUNTIME_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` only when a separate backend server must reach this runtime over the network. |
+| `AI_RUNTIME_AUTH_TOKEN` | empty | Bearer token for private endpoints. Required when `AI_RUNTIME_HOST` binds outside localhost. |
 | `AI_LLM_BASE_URL` | `http://localhost:1234/v1` | OpenAI-compatible LLM endpoint. |
 | `AI_LLM_MODEL` | empty | Model id loaded by LM Studio or a hosted LLM server. |
 | `AI_LLM_API_KEY` | `local-dev-key` | Local/provider API key. Do not commit real keys. |

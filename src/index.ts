@@ -1,5 +1,8 @@
 import { parseRuntimeConfig } from './config.js'
+import { loadRuntimeEnvFile } from './env-file.js'
 import { startServer } from './server.js'
+
+loadRuntimeEnvFile()
 
 const config = parseRuntimeConfig()
 const server = await startServer({ config })

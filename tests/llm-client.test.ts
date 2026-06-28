@@ -126,6 +126,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 
 function createRuntimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
+    host: '127.0.0.1',
     port: 0,
     authToken: '',
     llm: {

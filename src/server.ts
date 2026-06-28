@@ -21,6 +21,7 @@ import { createSemanticLoreSearchService, type LoreSearcher } from './rag/lore-s
 import { warmUp } from './warm-up.js'
 
 export interface StartServerOptions {
+  readonly host?: string
   readonly port?: number
   readonly config?: RuntimeConfig
   readonly chatClient?: ChatClient
@@ -34,6 +35,8 @@ export interface RunningServer {
 
 export async function startServer(options: StartServerOptions = {}): Promise<RunningServer> {
   const config = options.config ?? parseRuntimeConfig()
+  const host = normalizeBindHost(options.host ?? config.host)
+  assertSafeNetworkExposure(host, config.authToken)
   const chatClient = options.chatClient ?? createOpenAiChatClient(config.llm)
   const loreSearcher = options.loreSearcher ?? (await createSemanticLoreSearchService(config.rag))
 
@@ -42,7 +45,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   })
 
   await new Promise<void>((resolve) => {
-    server.listen(options.port ?? config.port, '127.0.0.1', resolve)
+    server.listen(options.port ?? config.port, host, resolve)
   })
 
   const address = server.address()
@@ -65,12 +68,32 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
   )
 
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: `http://${formatHostForUrl(host)}:${address.port}`,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
       })
   }
+}
+
+function normalizeBindHost(host: string | undefined): string {
+  const trimmed = host?.trim()
+  return trimmed || '127.0.0.1'
+}
+
+function assertSafeNetworkExposure(host: string, authToken: string): void {
+  if (!isLocalBindHost(host) && !authToken.trim()) {
+    throw new Error('AI_RUNTIME_AUTH_TOKEN is required when AI_RUNTIME_HOST binds outside localhost.')
+  }
+}
+
+function isLocalBindHost(host: string): boolean {
+  const normalized = host.toLowerCase().replace(/^\[(.*)\]$/, '$1')
+  return normalized === 'localhost' || normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized)
+}
+
+function formatHostForUrl(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
 }
 
 async function handleRequest(

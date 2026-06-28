@@ -25,6 +25,53 @@ test('GET /health returns service status', async (t) => {
   })
 })
 
+test('startServer uses configured bind host in its advertised URL', async (t) => {
+  const server = await startServer({
+    port: 0,
+    config: createRuntimeConfig({ host: '0.0.0.0', authToken: 'runtime-private-token' }),
+    chatClient: createFakeChatClient('unused'),
+    loreSearcher: createStubLoreSearcher()
+  })
+  t.after(() => server.close())
+
+  assert.match(server.url, /^http:\/\/0\.0\.0\.0:\d+$/)
+})
+
+test('startServer rejects network-exposed bind hosts without an auth token', async () => {
+  let server: Awaited<ReturnType<typeof startServer>> | null = null
+
+  try {
+    await assert.rejects(
+      async () => {
+        server = await startServer({
+          port: 0,
+          config: createRuntimeConfig({ host: '0.0.0.0', authToken: '' }),
+          chatClient: createFakeChatClient('unused'),
+          loreSearcher: createStubLoreSearcher()
+        })
+      },
+      /AI_RUNTIME_AUTH_TOKEN/
+    )
+  } finally {
+    await server?.close()
+  }
+})
+
+test('startServer rejects non-local bind hosts without an auth token', async () => {
+  await assert.rejects(
+    async () => {
+      const server = await startServer({
+        port: 0,
+        config: createRuntimeConfig({ host: '192.0.2.10', authToken: '' }),
+        chatClient: createFakeChatClient('unused'),
+        loreSearcher: createStubLoreSearcher()
+      })
+      await server.close()
+    },
+    /AI_RUNTIME_AUTH_TOKEN/
+  )
+})
+
 test('GET /ready reports dependency readiness without calling providers', async (t) => {
   let chatCalls = 0
   let loreSearchCalls = 0
@@ -520,6 +567,7 @@ function createStubLoreSearcher(): LoreSearcher {
 
 function createRuntimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
+    host: '127.0.0.1',
     port: 0,
     authToken: '',
     llm: {

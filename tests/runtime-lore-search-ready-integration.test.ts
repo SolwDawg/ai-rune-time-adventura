@@ -155,6 +155,7 @@ function createFakeChatClient(): ChatClient {
 
 function createRuntimeConfig(): RuntimeConfig {
   return {
+    host: '127.0.0.1',
     port: 0,
     authToken: '',
     llm: {

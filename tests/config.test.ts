@@ -6,6 +6,7 @@ import { parseRuntimeConfig } from '../src/config.js'
 test('parseRuntimeConfig uses local LM Studio defaults', () => {
   const config = parseRuntimeConfig({})
 
+  assert.equal(config.host, '127.0.0.1')
   assert.equal(config.port, 3100)
   assert.equal(config.llm.baseUrl, 'http://localhost:1234/v1')
   assert.equal(config.llm.apiKey, 'local-dev-key')
@@ -25,6 +26,7 @@ test('parseRuntimeConfig uses local LM Studio defaults', () => {
 
 test('parseRuntimeConfig accepts deployment overrides', () => {
   const config = parseRuntimeConfig({
+    AI_RUNTIME_HOST: '0.0.0.0',
     AI_RUNTIME_PORT: '4100',
     AI_LLM_BASE_URL: 'https://ai.example.internal/v1',
     AI_LLM_MODEL: 'gemma-local',
@@ -42,6 +44,7 @@ test('parseRuntimeConfig accepts deployment overrides', () => {
     RAG_EMBEDDING_DIMENSION: '768'
   })
 
+  assert.equal(config.host, '0.0.0.0')
   assert.equal(config.port, 4100)
   assert.equal(config.llm.baseUrl, 'https://ai.example.internal/v1')
   assert.equal(config.llm.model, 'gemma-local')

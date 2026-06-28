@@ -1,4 +1,5 @@
 export interface RuntimeConfig {
+  readonly host: string
   readonly port: number
   readonly authToken: string
   readonly llm: {
@@ -24,6 +25,7 @@ export interface RuntimeConfig {
 
 export function parseRuntimeConfig(env: Record<string, string | undefined> = process.env): RuntimeConfig {
   return {
+    host: parseHost(env.AI_RUNTIME_HOST),
     port: parsePositiveInt(env.AI_RUNTIME_PORT, 3100),
     authToken: env.AI_RUNTIME_AUTH_TOKEN || '',
     llm: {
@@ -53,6 +55,11 @@ export function parseRuntimeConfig(env: Record<string, string | undefined> = pro
       embeddingCacheMax: env.RAG_EMBEDDING_CACHE_MAX?.trim() === '0' ? 0 : parsePositiveInt(env.RAG_EMBEDDING_CACHE_MAX, 256)
     }
   }
+}
+
+function parseHost(value: string | undefined): string {
+  const trimmed = value?.trim()
+  return trimmed || '127.0.0.1'
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
