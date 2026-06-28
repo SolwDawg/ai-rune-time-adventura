@@ -13,7 +13,7 @@ test('buildNpcDialoguePrompt includes authority boundary and grounded context', 
     loreSnippets: ['Giong grows after the village asks for help.', 'The iron horse is prepared by the king.']
   })
 
-  assert.equal(prompt.maxTokens, 512)
+  assert.equal(prompt.maxTokens, 320)
   assert.equal(prompt.temperature, 0.35)
   assert.match(prompt.systemPrompt, /Do not grant rewards, complete quests, mutate inventory, or override server state\./)
   assert.match(prompt.systemPrompt, /NPC id: tg_village_elder_npc/)
@@ -32,7 +32,7 @@ test('buildStoryReasoningPrompt keeps reasoning advisory and uses approved conte
     approvedContext: ['The oath binds the village together.']
   })
 
-  assert.equal(prompt.maxTokens, 512)
+  assert.equal(prompt.maxTokens, 320)
   assert.equal(prompt.temperature, 0.1)
   assert.match(prompt.systemPrompt, /advisory assessment/i)
   assert.match(prompt.systemPrompt, /Do not grant rewards, complete quests, mutate inventory, or override server state\./)

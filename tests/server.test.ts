@@ -5,9 +5,14 @@ import { startServer } from '../src/server.js'
 import { AI_FALLBACK_TEXT } from '../src/contracts.js'
 import type { ChatClient } from '../src/llm-client.js'
 import type { RuntimeConfig } from '../src/config.js'
+import type { LoreSearcher } from '../src/rag/lore-search-service.js'
 
 test('GET /health returns service status', async (t) => {
-  const server = await startServer({ port: 0, chatClient: createFakeChatClient('unused') })
+  const server = await startServer({
+    port: 0,
+    chatClient: createFakeChatClient('unused'),
+    loreSearcher: createStubLoreSearcher()
+  })
   t.after(() => server.close())
 
   const response = await fetch(`${server.url}/health`)
@@ -127,7 +132,11 @@ test('private endpoint contract rejects missing required fields before provider 
 })
 
 test('POST /v1/npc-dialogue returns sanitized AI text from chat client', async (t) => {
-  const server = await startServer({ port: 0, chatClient: createFakeChatClient('Xin chao nguoi choi.   ') })
+  const server = await startServer({
+    port: 0,
+    chatClient: createFakeChatClient('Xin chao nguoi choi.   '),
+    loreSearcher: createStubLoreSearcher()
+  })
   t.after(() => server.close())
 
   const response = await fetch(`${server.url}/v1/npc-dialogue`, {
@@ -149,11 +158,36 @@ test('POST /v1/npc-dialogue returns sanitized AI text from chat client', async (
   })
 })
 
+test('POST /v1/npc-dialogue returns emotion when the model emits JSON with a valid emotion', async (t) => {
+  const server = await startServer({
+    port: 0,
+    chatClient: createFakeChatClient('```json\n{"message":"Xin chao nguoi choi.","emotion":"happy"}\n```'),
+    loreSearcher: createStubLoreSearcher()
+  })
+  t.after(() => server.close())
+
+  const response = await fetch(`${server.url}/v1/npc-dialogue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ npcId: 'guide_npc', playerText: 'Ke cho toi ve lang nay' })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(body, {
+    ok: true,
+    source: 'ai',
+    text: 'Xin chao nguoi choi.',
+    emotion: 'happy'
+  })
+})
+
 test('private endpoints reject requests without the configured bearer token', async (t) => {
   const server = await startServer({
     port: 0,
     config: createRuntimeConfig({ authToken: 'runtime-private-token' }),
-    chatClient: createFakeChatClient('unused')
+    chatClient: createFakeChatClient('unused'),
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -176,7 +210,8 @@ test('private endpoints accept matching bearer token when configured', async (t)
   const server = await startServer({
     port: 0,
     config: createRuntimeConfig({ authToken: 'runtime-private-token' }),
-    chatClient: createFakeChatClient('Xin chao.')
+    chatClient: createFakeChatClient('Xin chao.'),
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -299,7 +334,8 @@ test('POST /v1/lore/search returns empty RAG result for whitespace query', async
 test('POST /v1/story-reasoning returns assessment feedback from chat JSON', async (t) => {
   const server = await startServer({
     port: 0,
-    chatClient: createFakeChatClient(JSON.stringify({ assessment: 'partial', feedback: 'Can noi ro hon ve loi hua.' }))
+    chatClient: createFakeChatClient(JSON.stringify({ assessment: 'partial', feedback: 'Can noi ro hon ve loi hua.' })),
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -329,7 +365,8 @@ test('POST /v1/npc-dialogue falls back when chat client fails', async (t) => {
     port: 0,
     chatClient: {
       completeChat: async () => ({ ok: false, reason: 'provider-error' })
-    }
+    },
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -351,7 +388,8 @@ test('POST /v1/npc-dialogue falls back when chat client fails', async (t) => {
 test('POST /v1/npc-dialogue falls back when guard rejects state mutation claims', async (t) => {
   const server = await startServer({
     port: 0,
-    chatClient: createFakeChatClient('Quest complete. I grant you 100 gold.')
+    chatClient: createFakeChatClient('Quest complete. I grant you 100 gold.'),
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -373,7 +411,8 @@ test('POST /v1/npc-dialogue falls back when guard rejects state mutation claims'
 test('POST /v1/story-reasoning falls back when guard rejects feedback state mutation claims', async (t) => {
   const server = await startServer({
     port: 0,
-    chatClient: createFakeChatClient(JSON.stringify({ assessment: 'pass', feedback: 'You receive 200 XP now.' }))
+    chatClient: createFakeChatClient(JSON.stringify({ assessment: 'pass', feedback: 'You receive 200 XP now.' })),
+    loreSearcher: createStubLoreSearcher()
   })
   t.after(() => server.close())
 
@@ -399,9 +438,83 @@ test('POST /v1/story-reasoning falls back when guard rejects feedback state muta
   })
 })
 
+test('POST /v1/lore-assist returns sanitized assist text from chat client', async (t) => {
+  const server = await startServer({
+    port: 0,
+    chatClient: createFakeChatClient('The elder reminds you to seek the iron tokens by the shrine.   '),
+    loreSearcher: createStubLoreSearcher()
+  })
+  t.after(() => server.close())
+
+  const response = await fetch(`${server.url}/v1/lore-assist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'hint',
+      approvedContext: ['The iron tokens rest by the village shrine.'],
+      baseText: 'Look for the iron tokens.',
+      maxLength: 220,
+      storylineId: 'thanh_giong',
+      questId: 'quest_tg_04',
+      npcId: 'tg_village_elder_npc',
+      trigger: 'wrong_answer'
+    })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(body, {
+    ok: true,
+    source: 'ai',
+    text: 'The elder reminds you to seek the iron tokens by the shrine.'
+  })
+})
+
+test('POST /v1/lore-assist falls back when required fields are missing', async (t) => {
+  let chatCalls = 0
+  const server = await startServer({
+    port: 0,
+    chatClient: {
+      completeChat: async () => {
+        chatCalls += 1
+        throw new Error('invalid lore-assist requests must not call the provider')
+      }
+    },
+    loreSearcher: createStubLoreSearcher()
+  })
+  t.after(() => server.close())
+
+  const response = await fetch(`${server.url}/v1/lore-assist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'hint' })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(body, { ok: false, source: 'fallback', text: AI_FALLBACK_TEXT })
+  assert.equal(chatCalls, 0)
+})
+
 function createFakeChatClient(text: string): ChatClient {
   return {
     completeChat: async () => ({ ok: true, text })
+  }
+}
+
+// Lightweight LoreSearcher stub for chat-only tests. These tests never hit lore
+// search, so `search` throws like the existing /ready stub. The fast fake
+// `embedQuery` keeps the fire-and-forget startup warm-up from loading the real
+// @huggingface/transformers MiniLM model into the test process.
+function createStubLoreSearcher(): LoreSearcher {
+  return {
+    search: async () => {
+      throw new Error('chat-only tests must not call lore search')
+    },
+    embeddingProviderForWarmup: {
+      embedQuery: async () => []
+    },
+    indexSignature: undefined
   }
 }
 

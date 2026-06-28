@@ -4,17 +4,21 @@ import { parseRuntimeConfig, type RuntimeConfig } from './config.js'
 import {
   AI_FALLBACK_TEXT,
   type AiRuntimeTextResponse,
+  type LoreAssistRequest,
   type LoreSearchRequest,
   type LoreSearchResponse,
+  type NpcDialogueEmotion,
   type NpcDialogueRequest,
   type StoryReasoningRequest,
   type StoryReasoningResponse
 } from './contracts.js'
 import { guardAiOutput } from './guards/ai-output-guard.js'
 import { createOpenAiChatClient, type ChatClient } from './llm-client.js'
+import { buildLoreAssistPrompt } from './prompts/lore-assist-prompt.js'
 import { buildNpcDialoguePrompt } from './prompts/npc-dialogue-prompt.js'
 import { buildStoryReasoningPrompt } from './prompts/story-reasoning-prompt.js'
 import { createSemanticLoreSearchService, type LoreSearcher } from './rag/lore-search-service.js'
+import { warmUp } from './warm-up.js'
 
 export interface StartServerOptions {
   readonly port?: number
@@ -46,6 +50,20 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
     throw new Error('AI runtime server did not bind to a TCP port.')
   }
 
+  // Fire-and-forget startup warm-up (Req 4.3): never awaited, never gates listen
+  // or `/ready`. All errors are swallowed inside warmUp (Req 4.4).
+  const ragConfigured = Boolean(
+    config.rag.indexFile.trim() && config.rag.embeddingModel.trim() && config.rag.corpusDir.trim()
+  )
+  void warmUp(
+    {
+      ragConfigured,
+      llmConfigured: Boolean(config.llm.model.trim()),
+      llmWarmupEnabled: config.llm.warmupEnabled
+    },
+    { embeddingProvider: loreSearcher.embeddingProviderForWarmup, chatClient }
+  )
+
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () =>
@@ -70,7 +88,7 @@ async function handleRequest(
   }
 
   if (request.method === 'GET' && url.pathname === '/ready') {
-    sendJson(response, 200, buildReadiness(config))
+    sendJson(response, 200, buildReadiness(config, loreSearcher.indexSignature))
     return
   }
 
@@ -110,10 +128,22 @@ async function handleRequest(
     return
   }
 
+  if (request.method === 'POST' && url.pathname === '/v1/lore-assist') {
+    if (!isAuthorized(request, config.authToken)) {
+      sendUnauthorized(response)
+      return
+    }
+
+    const body = await readJson(request)
+    const result = await resolveLoreAssist(body, chatClient)
+    sendJson(response, 200, result)
+    return
+  }
+
   sendJson(response, 404, { ok: false, error: 'not-found' })
 }
 
-function buildReadiness(config: RuntimeConfig) {
+export function buildReadiness(config: RuntimeConfig, indexSignature?: string) {
   const llm = config.llm.model.trim()
     ? { ready: true as const }
     : { ready: false as const, reason: 'missing-model' as const }
@@ -121,10 +151,14 @@ function buildReadiness(config: RuntimeConfig) {
     ? { ready: true as const }
     : { ready: false as const, reason: 'missing-rag-config' as const }
 
+  // Additive: only present when an index is actually loaded (Req 2.1, 6.2). The
+  // readiness derivation itself is unchanged.
+  const ragDependency = indexSignature ? { ...rag, indexSignature } : rag
+
   return {
     status: llm.ready && rag.ready ? ('ok' as const) : ('degraded' as const),
     service: 'adventura-ai-runtime',
-    dependencies: { llm, rag }
+    dependencies: { llm, rag: ragDependency }
   }
 }
 
@@ -140,8 +174,44 @@ async function resolveNpcDialogue(body: unknown, chatClient: ChatClient): Promis
     return { ok: false, source: 'fallback', text: AI_FALLBACK_TEXT }
   }
 
-  const guarded = guardAiOutput({ text: result.text, fallbackText: AI_FALLBACK_TEXT })
-  return guarded.ok ? { ok: true, source: 'ai', text: guarded.text } : { ok: false, source: 'fallback', text: guarded.text }
+  // Tolerant parse: well-behaved models return JSON { message, emotion }; models
+  // that ignore the JSON instruction return plain text, which is treated as the
+  // message with no emotion. Only the player-visible message passes the guard.
+  const parsed = parseNpcDialogueResult(result.text)
+  const guarded = guardAiOutput({ text: parsed.message, fallbackText: AI_FALLBACK_TEXT })
+  if (!guarded.ok) {
+    return { ok: false, source: 'fallback', text: guarded.text }
+  }
+
+  return parsed.emotion
+    ? { ok: true, source: 'ai', text: guarded.text, emotion: parsed.emotion }
+    : { ok: true, source: 'ai', text: guarded.text }
+}
+
+const NPC_DIALOGUE_EMOTIONS = new Set<NpcDialogueEmotion>([
+  'neutral',
+  'happy',
+  'worried',
+  'serious',
+  'angry',
+  'sad'
+])
+
+function parseNpcDialogueResult(text: string): { message: string; emotion?: NpcDialogueEmotion } {
+  try {
+    const parsed = JSON.parse(stripJsonFence(text.trim())) as { message?: unknown; emotion?: unknown }
+    if (parsed && typeof parsed === 'object' && typeof parsed.message === 'string' && parsed.message.trim()) {
+      const emotion =
+        typeof parsed.emotion === 'string' && NPC_DIALOGUE_EMOTIONS.has(parsed.emotion as NpcDialogueEmotion)
+          ? (parsed.emotion as NpcDialogueEmotion)
+          : undefined
+      return emotion ? { message: parsed.message, emotion } : { message: parsed.message }
+    }
+  } catch {
+    // Not JSON — fall through and treat the raw text as the message.
+  }
+
+  return { message: text }
 }
 
 function normalizeNpcDialogueRequest(body: unknown): NpcDialogueRequest | null {
@@ -270,6 +340,49 @@ function fallbackStoryReasoning(errorCode: string): StoryReasoningResponse {
     feedback: AI_FALLBACK_TEXT,
     source: 'fallback',
     errorCode
+  }
+}
+
+async function resolveLoreAssist(body: unknown, chatClient: ChatClient): Promise<AiRuntimeTextResponse> {
+  const request = normalizeLoreAssistRequest(body)
+  if (!request) {
+    return { ok: false, source: 'fallback', text: AI_FALLBACK_TEXT }
+  }
+
+  const result = await chatClient.completeChat(buildLoreAssistPrompt(request))
+  if (!result.ok) {
+    return { ok: false, source: 'fallback', text: AI_FALLBACK_TEXT }
+  }
+
+  const guarded = guardAiOutput({ text: result.text, fallbackText: AI_FALLBACK_TEXT })
+  return guarded.ok
+    ? { ok: true, source: 'ai', text: guarded.text }
+    : { ok: false, source: 'fallback', text: guarded.text }
+}
+
+function normalizeLoreAssistRequest(body: unknown): LoreAssistRequest | null {
+  if (!body || typeof body !== 'object') {
+    return null
+  }
+
+  const candidate = body as Partial<LoreAssistRequest>
+  if (
+    (candidate.kind !== 'hint' && candidate.kind !== 'recap') ||
+    typeof candidate.baseText !== 'string' ||
+    !Array.isArray(candidate.approvedContext)
+  ) {
+    return null
+  }
+
+  return {
+    kind: candidate.kind,
+    baseText: candidate.baseText,
+    approvedContext: candidate.approvedContext.filter((entry): entry is string => typeof entry === 'string'),
+    ...(Number.isSafeInteger(candidate.maxLength) ? { maxLength: candidate.maxLength } : {}),
+    ...(typeof candidate.storylineId === 'string' ? { storylineId: candidate.storylineId } : {}),
+    ...(typeof candidate.questId === 'string' ? { questId: candidate.questId } : {}),
+    ...(typeof candidate.npcId === 'string' ? { npcId: candidate.npcId } : {}),
+    ...(typeof candidate.trigger === 'string' ? { trigger: candidate.trigger } : {})
   }
 }
 

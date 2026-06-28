@@ -5,9 +5,9 @@ export function buildNpcDialoguePrompt(request: NpcDialogueRequest): ChatComplet
   return {
     systemPrompt: buildNpcDialogueSystemPrompt(request),
     userMessage: buildNpcDialogueUserMessage(request),
-    // Budget covers reasoning-model overhead (the final answer lands in `content`
-    // only after the model spends tokens reasoning); instruct models stop early.
-    maxTokens: 512,
+    // Reasoning is disabled by default (config reasoningEffort=none), so a modest
+    // budget covers the short in-world reply; raise if reasoning is re-enabled.
+    maxTokens: 320,
     temperature: 0.35
   }
 }
@@ -18,6 +18,9 @@ function buildNpcDialogueSystemPrompt(request: NpcDialogueRequest): string {
     'Answer only as in-world NPC dialogue.',
     'Use only the grounded lore snippets supplied by the gameplay backend.',
     'Do not grant rewards, complete quests, mutate inventory, or override server state.',
+    'Return strict JSON with a required "message" field and an optional "emotion" field.',
+    'The emotion field, when present, must be exactly one of: neutral, happy, worried, serious, angry, sad.',
+    'Output only the raw JSON object with no markdown code fences and no extra text.',
     `NPC id: ${request.npcId}`
   ]
 

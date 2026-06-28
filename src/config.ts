@@ -6,6 +6,8 @@ export interface RuntimeConfig {
     readonly model: string
     readonly apiKey: string
     readonly requestTimeoutMs: number
+    readonly reasoningEffort: string
+    readonly warmupEnabled: boolean
   }
   readonly rag: {
     readonly corpusDir: string
@@ -16,6 +18,7 @@ export interface RuntimeConfig {
     readonly rebuildIndexOnMissing: boolean
     readonly embeddingModel: string
     readonly embeddingDimension: number
+    readonly embeddingCacheMax: number
   }
 }
 
@@ -27,7 +30,14 @@ export function parseRuntimeConfig(env: Record<string, string | undefined> = pro
       baseUrl: trimTrailingSlash(env.AI_LLM_BASE_URL || 'http://localhost:1234/v1'),
       model: env.AI_LLM_MODEL || '',
       apiKey: env.AI_LLM_API_KEY || 'local-dev-key',
-      requestTimeoutMs: parsePositiveInt(env.AI_LLM_TIMEOUT_MS, 12000)
+      requestTimeoutMs: parsePositiveInt(env.AI_LLM_TIMEOUT_MS, 12000),
+      // Controls chain-of-thought for reasoning models (e.g. Gemma 4 QAT). The
+      // default "none" disables thinking so short dialogue/assessment outputs stay
+      // fast; set to a model-supported level (e.g. "low") to re-enable reasoning.
+      reasoningEffort: env.AI_LLM_REASONING_EFFORT || 'none',
+      // Gates the optional startup LLM warm-up probe. Embedding warm-up needs no
+      // flag; it runs whenever RAG is configured.
+      warmupEnabled: parseBoolean(env.AI_LLM_WARMUP_ENABLED, false)
     },
     rag: {
       corpusDir: env.RAG_CORPUS_DIR || 'data/lore-corpus',
@@ -37,7 +47,10 @@ export function parseRuntimeConfig(env: Record<string, string | undefined> = pro
       topK: parsePositiveInt(env.RAG_TOP_K, 4),
       rebuildIndexOnMissing: parseBoolean(env.RAG_REBUILD_INDEX_ON_MISSING, false),
       embeddingModel: env.RAG_EMBEDDING_MODEL || 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
-      embeddingDimension: parsePositiveInt(env.RAG_EMBEDDING_DIMENSION, 384)
+      embeddingDimension: parsePositiveInt(env.RAG_EMBEDDING_DIMENSION, 384),
+      // Max query-embedding LRU entries. Default 256; an explicit "0" disables the
+      // cache (parsePositiveInt rejects 0, so 0 is handled here before falling back).
+      embeddingCacheMax: env.RAG_EMBEDDING_CACHE_MAX?.trim() === '0' ? 0 : parsePositiveInt(env.RAG_EMBEDDING_CACHE_MAX, 256)
     }
   }
 }

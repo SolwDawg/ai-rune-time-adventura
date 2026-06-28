@@ -51,7 +51,8 @@ export function createOpenAiChatClient(config: RuntimeConfig['llm'], fetchFn: Fe
               { role: 'user', content: request.userMessage }
             ],
             max_tokens: request.maxTokens ?? 220,
-            temperature: request.temperature ?? 0.35
+            temperature: request.temperature ?? 0.35,
+            ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {})
           }),
           signal: controller.signal
         })

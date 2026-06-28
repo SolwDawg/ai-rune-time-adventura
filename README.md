@@ -25,6 +25,7 @@ GET  /ready
 POST /v1/npc-dialogue
 POST /v1/lore/search
 POST /v1/story-reasoning
+POST /v1/lore-assist
 ```
 
 Private endpoints enforce `Authorization: Bearer <AI_RUNTIME_AUTH_TOKEN>` when
@@ -127,6 +128,24 @@ It returns AI assessment feedback or a fallback:
   "source": "ai"
 }
 ```
+
+`POST /v1/lore-assist` accepts:
+
+```json
+{
+  "kind": "hint",
+  "approvedContext": ["Grounded folklore context."],
+  "baseText": "Deterministic fallback hint.",
+  "maxLength": 220,
+  "storylineId": "thanh_giong",
+  "questId": "quest_tg_04",
+  "npcId": "tg_village_elder_npc",
+  "trigger": "wrong_answer"
+}
+```
+
+It returns a player-facing hint/recap or a safe fallback, using the same text
+response shape as `POST /v1/npc-dialogue`.
 
 ## Provider and Guard
 
@@ -255,6 +274,7 @@ Invoke-RestMethod -Uri 'http://127.0.0.1:3100/v1/npc-dialogue' -Method Post -Hea
 | `AI_LLM_MODEL` | empty | Model id loaded by LM Studio or a hosted LLM server. |
 | `AI_LLM_API_KEY` | `local-dev-key` | Local/provider API key. Do not commit real keys. |
 | `AI_LLM_TIMEOUT_MS` | `12000` | Provider timeout for AI text generation. |
+| `AI_LLM_REASONING_EFFORT` | `none` | Reasoning effort for reasoning-capable models (e.g. Gemma 4 QAT). `none` disables chain-of-thought so short outputs stay fast; set e.g. `low` to re-enable. |
 | `RAG_CORPUS_DIR` | `data/lore-corpus` | Retrievable lore markdown corpus. |
 | `RAG_POLICY_DIR` | `data/lore-policy` | Policy markdown and forbidden phrases, excluded from retrieval. |
 | `RAG_INDEX_FILE` | `data/lore-index/lore-embedding-index.json` | Serialized embedding index. |

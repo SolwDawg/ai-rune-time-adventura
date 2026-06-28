@@ -5,9 +5,9 @@ export function buildStoryReasoningPrompt(request: StoryReasoningRequest): ChatC
   return {
     systemPrompt: buildStoryReasoningSystemPrompt(),
     userMessage: buildStoryReasoningUserMessage(request),
-    // Budget covers reasoning-model overhead before the final JSON lands in
-    // `content`; instruct models stop early so the larger cap is harmless.
-    maxTokens: 512,
+    // Reasoning is disabled by default (config reasoningEffort=none), so a modest
+    // budget covers the short JSON assessment; raise if reasoning is re-enabled.
+    maxTokens: 320,
     temperature: 0.1
   }
 }
