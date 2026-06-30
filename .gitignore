@@ -3,3 +3,11 @@ dist/
 .env
 .env.local
 npm-debug.log*
+
+# Local agent/tool state (machine-generated)
+.agents/
+.codex/
+
+# Windsurf local config
+.windsurfrules
+.windsurf/
