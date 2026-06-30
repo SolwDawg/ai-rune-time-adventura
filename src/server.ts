@@ -197,13 +197,20 @@ async function resolveNpcDialogue(body: unknown, chatClient: ChatClient): Promis
     return { ok: false, source: 'fallback', text: AI_FALLBACK_TEXT }
   }
 
-  // Tolerant parse: well-behaved models return JSON { message, emotion }; models
-  // that ignore the JSON instruction return plain text, which is treated as the
-  // message with no emotion. Only the player-visible message passes the guard.
-  const parsed = parseNpcDialogueResult(result.text)
+  // Tolerant parse: NPC dialogue mode accepts JSON { message, emotion } while
+  // temporary chatbot mode treats the result as plain text and never exposes
+  // emotion metadata to the game client.
+  const parsed =
+    request.mode === 'chatbot'
+      ? { message: parseNpcDialogueResult(result.text).message }
+      : parseNpcDialogueResult(result.text)
   const guarded = guardAiOutput({ text: parsed.message, fallbackText: AI_FALLBACK_TEXT })
   if (!guarded.ok) {
     return { ok: false, source: 'fallback', text: guarded.text }
+  }
+
+  if (request.mode === 'chatbot') {
+    return { ok: true, source: 'ai', text: guarded.text }
   }
 
   return parsed.emotion
@@ -250,6 +257,10 @@ function normalizeNpcDialogueRequest(body: unknown): NpcDialogueRequest | null {
   return {
     npcId: candidate.npcId,
     playerText: candidate.playerText,
+    mode:
+      candidate.mode === 'chatbot' || candidate.mode === 'npc-dialogue'
+        ? candidate.mode
+        : undefined,
     loreSnippets: Array.isArray(candidate.loreSnippets)
       ? candidate.loreSnippets.filter((snippet): snippet is string => typeof snippet === 'string')
       : [],

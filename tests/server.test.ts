@@ -229,6 +229,35 @@ test('POST /v1/npc-dialogue returns emotion when the model emits JSON with a val
   })
 })
 
+test('POST /v1/npc-dialogue chatbot mode returns plain text and ignores model emotion', async (t) => {
+  const server = await startServer({
+    port: 0,
+    chatClient: createFakeChatClient('```json\n{"message":"Four.","emotion":"happy"}\n```'),
+    loreSearcher: createStubLoreSearcher()
+  })
+  t.after(() => server.close())
+
+  const response = await fetch(`${server.url}/v1/npc-dialogue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      npcId: 'guide_npc',
+      playerText: 'What is 2+2?',
+      mode: 'chatbot',
+      loreSnippets: ['Storyline lore must not be used.'],
+      persona: 'village guide'
+    })
+  })
+  const body = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(body, {
+    ok: true,
+    source: 'ai',
+    text: 'Four.'
+  })
+})
+
 test('private endpoints reject requests without the configured bearer token', async (t) => {
   const server = await startServer({
     port: 0,

@@ -3,6 +3,7 @@ export const AI_FALLBACK_TEXT = 'Luc nay ta chua the tra loi. Hay hoi lai sau.'
 export interface NpcDialogueRequest {
   readonly npcId: string
   readonly playerText: string
+  readonly mode?: 'npc-dialogue' | 'chatbot'
   readonly loreSnippets?: readonly string[]
   readonly persona?: string
   readonly language?: string
@@ -20,6 +21,11 @@ export interface LoreSnippet {
   readonly heading: string
   readonly text: string
   readonly score: number
+  // Additive, optional, backward-compatible: identifies the quest milestone a
+  // chunk is gated behind (from corpus front matter). The Backend uses it to
+  // drop snippets the player has not unlocked yet (anti-spoiler, Req 3.1/3.2).
+  // Chunks with no questId are non-gated lore and omit this field.
+  readonly questId?: string
 }
 
 export interface StoryReasoningRequest {

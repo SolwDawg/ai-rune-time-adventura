@@ -40,7 +40,10 @@ export class LoreIndex {
         source: entry.chunk.source,
         heading: entry.chunk.heading,
         text: entry.chunk.text,
-        score: cosineSimilarity(options.queryVector, entry.vector)
+        score: cosineSimilarity(options.queryVector, entry.vector),
+        // Propagate the chunk's quest gate so the backend can apply its
+        // Unlocked_Content (anti-spoiler) filter. Omitted for non-gated chunks.
+        ...(entry.chunk.questId ? { questId: entry.chunk.questId } : {})
       }))
       .filter((result) => result.score >= options.threshold)
       .sort(
@@ -54,6 +57,21 @@ export class LoreIndex {
   }
 }
 
+/**
+ * Storyline/NPC scope guard for lore retrieval.
+ *
+ * Rules (Requirements 1.3, 1.4, 1.5, 2.1):
+ * - When the request carries a `storylineId`, any chunk tagged with a DIFFERENT
+ *   `storylineId` is excluded (no cross-storyline leakage).
+ * - A chunk with no `storylineId` is Shared_Lore and is always kept regardless of
+ *   the request `storylineId`.
+ * - When the request carries an `npcId`, any chunk tagged with a DIFFERENT `npcId`
+ *   is excluded; chunks with no `npcId` are kept.
+ *
+ * Behavior is intentionally unchanged from the prior implementation (a request
+ * without `storylineId` still matches every chunk); the missing-storyline gate
+ * is enforced upstream by the backend orchestrator, not here.
+ */
 function matchesScope(chunk: LoreCorpusChunk, storylineId: string | undefined, npcId: string | undefined): boolean {
   if (storylineId && chunk.storylineId && chunk.storylineId !== storylineId) {
     return false

@@ -10,6 +10,7 @@ export interface LoreCorpusChunk {
   readonly text: string
   readonly storylineId?: string
   readonly npcId?: string
+  readonly questId?: string
 }
 
 export interface PolicyStore {
@@ -35,6 +36,7 @@ export interface LoadLoreCorpusOptions {
 interface MarkdownMetadata {
   readonly storylineId?: string
   readonly npcId?: string
+  readonly questId?: string
 }
 
 export function loadLoreCorpus(options: LoadLoreCorpusOptions): LoadedLoreCorpus {
@@ -132,7 +134,7 @@ function readFrontMatter(content: string): { readonly metadata: MarkdownMetadata
   }
 
   const metadataText = content.slice(4, end)
-  const metadata: { storylineId?: string; npcId?: string } = {}
+  const metadata: { storylineId?: string; npcId?: string; questId?: string } = {}
   for (const line of metadataText.split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+?)\s*$/)
     if (!match) {
@@ -145,6 +147,10 @@ function readFrontMatter(content: string): { readonly metadata: MarkdownMetadata
 
     if (match[1] === 'npcId') {
       metadata.npcId = match[2]
+    }
+
+    if (match[1] === 'questId') {
+      metadata.questId = match[2]
     }
   }
 
