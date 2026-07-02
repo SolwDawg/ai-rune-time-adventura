@@ -49,6 +49,47 @@ test('completeChat posts OpenAI-compatible request shape and trims base URL', as
   })
 })
 
+test('completeChat logs provider request and response payloads when enabled', async () => {
+  const logs: string[] = []
+  const client = createOpenAiChatClient(
+    createRuntimeConfig({
+      llm: {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        model: 'gemini-2.5-flash-lite',
+        apiKey: 'secret-key',
+        requestTimeoutMs: 12000,
+        reasoningEffort: 'none',
+        warmupEnabled: false,
+        logPayloadsEnabled: true
+      }
+    }).llm,
+    (async () =>
+      jsonResponse({
+        choices: [{ message: { content: '  Làng đang có điềm chẳng lành.  ' } }]
+      })) as typeof fetch,
+    { info: (message) => logs.push(message) }
+  )
+
+  const result = await client.completeChat({
+    systemPrompt: 'Giữ vai Trưởng Làng.',
+    userMessage: 'Trong làng đang xảy ra chuyện gì?',
+    maxTokens: 80,
+    temperature: 0.25
+  })
+
+  assert.deepEqual(result, { ok: true, text: 'Làng đang có điềm chẳng lành.' })
+  assert.equal(logs.length, 2)
+  assert.match(logs[0], /^\[llm\] request /)
+  assert.match(logs[0], /"url":"https:\/\/generativelanguage.googleapis.com\/v1beta\/openai\/chat\/completions"/)
+  assert.match(logs[0], /"model":"gemini-2.5-flash-lite"/)
+  assert.match(logs[0], /"content":"Trong làng đang xảy ra chuyện gì\?"/)
+  assert.doesNotMatch(logs[0], /secret-key/)
+  assert.match(logs[1], /^\[llm\] response /)
+  assert.match(logs[1], /"status":200/)
+  assert.match(logs[1], /"content":"  Làng đang có điềm chẳng lành.  "/)
+  assert.doesNotMatch(logs[1], /secret-key/)
+})
+
 test('completeChat fails safely without model and does not call fetch', async () => {
   let fetchCalls = 0
   const client = createOpenAiChatClient(
@@ -133,7 +174,10 @@ function createRuntimeConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeCon
       baseUrl: 'http://localhost:1234/v1',
       model: 'test-model',
       apiKey: 'local-dev-key',
-      requestTimeoutMs: 12000
+      requestTimeoutMs: 12000,
+      reasoningEffort: 'none',
+      warmupEnabled: false,
+      logPayloadsEnabled: false
     },
     ...overrides
   }

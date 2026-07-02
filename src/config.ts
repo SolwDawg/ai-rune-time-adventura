@@ -9,6 +9,7 @@ export interface RuntimeConfig {
     readonly requestTimeoutMs: number
     readonly reasoningEffort: string
     readonly warmupEnabled: boolean
+    readonly logPayloadsEnabled: boolean
   }
   readonly rag: {
     readonly corpusDir: string
@@ -39,7 +40,10 @@ export function parseRuntimeConfig(env: Record<string, string | undefined> = pro
       reasoningEffort: env.AI_LLM_REASONING_EFFORT || 'none',
       // Gates the optional startup LLM warm-up probe. Embedding warm-up needs no
       // flag; it runs whenever RAG is configured.
-      warmupEnabled: parseBoolean(env.AI_LLM_WARMUP_ENABLED, false)
+      warmupEnabled: parseBoolean(env.AI_LLM_WARMUP_ENABLED, false),
+      // Verbose provider payload tracing for local debugging. This can include
+      // prompts/player text, so keep it disabled outside focused diagnostics.
+      logPayloadsEnabled: parseBoolean(env.AI_LLM_LOG_PAYLOADS, false)
     },
     rag: {
       corpusDir: env.RAG_CORPUS_DIR || 'data/lore-corpus',

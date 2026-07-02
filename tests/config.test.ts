@@ -13,6 +13,7 @@ test('parseRuntimeConfig uses local LM Studio defaults', () => {
   assert.equal(config.llm.model, '')
   assert.equal(config.llm.requestTimeoutMs, 12000)
   assert.equal(config.llm.reasoningEffort, 'none')
+  assert.equal(config.llm.logPayloadsEnabled, false)
   assert.equal(config.authToken, '')
   assert.equal(config.rag.corpusDir, 'data/lore-corpus')
   assert.equal(config.rag.policyDir, 'data/lore-policy')
@@ -33,6 +34,7 @@ test('parseRuntimeConfig accepts deployment overrides', () => {
     AI_LLM_API_KEY: 'private-key',
     AI_LLM_TIMEOUT_MS: '9000',
     AI_LLM_REASONING_EFFORT: 'low',
+    AI_LLM_LOG_PAYLOADS: 'true',
     AI_RUNTIME_AUTH_TOKEN: 'runtime-private-token',
     RAG_CORPUS_DIR: 'runtime-data/corpus',
     RAG_POLICY_DIR: 'runtime-data/policy',
@@ -51,6 +53,7 @@ test('parseRuntimeConfig accepts deployment overrides', () => {
   assert.equal(config.llm.apiKey, 'private-key')
   assert.equal(config.llm.requestTimeoutMs, 9000)
   assert.equal(config.llm.reasoningEffort, 'low')
+  assert.equal(config.llm.logPayloadsEnabled, true)
   assert.equal(config.authToken, 'runtime-private-token')
   assert.equal(config.rag.corpusDir, 'runtime-data/corpus')
   assert.equal(config.rag.policyDir, 'runtime-data/policy')
