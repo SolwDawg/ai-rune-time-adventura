@@ -75,6 +75,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          VPS_HOST="$(printf '%s' "$VPS_HOST" | tr -d '\r\n')"
+          VPS_USER="$(printf '%s' "$VPS_USER" | tr -d '\r\n')"
+          VPS_SSH_PORT="$(printf '%s' "${VPS_SSH_PORT:-}" | tr -d '\r\n')"
+          VPS_DEPLOY_PATH="$(printf '%s' "${VPS_DEPLOY_PATH:-}" | tr -d '\r\n')"
+
           : "${VPS_HOST:?Missing VPS_HOST secret}"
           : "${VPS_USER:?Missing VPS_USER secret}"
           : "${VPS_SSH_KEY:?Missing VPS_SSH_KEY secret}"
@@ -84,7 +89,7 @@ jobs:
           image_ref="${IMAGE_NAME}:${GITHUB_REF_NAME}"
 
           mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/adventura_deploy_key
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > ~/.ssh/adventura_deploy_key
           chmod 600 ~/.ssh/adventura_deploy_key
           ssh-keyscan -p "$ssh_port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
