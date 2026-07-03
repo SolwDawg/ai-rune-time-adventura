@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - develop
+    tags:
+      - 'ai-runtime-v*'
   workflow_dispatch:
 
 permissions:
@@ -13,6 +15,10 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/solwdawg/adventura-ai-runtime
+
+concurrency:
+  group: adventura-ai-runtime-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -40,6 +46,7 @@ jobs:
           tags: |
             type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
             type=sha,prefix=sha-
 
       - name: Build and push
@@ -51,3 +58,57 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/ai-runtime-v')
+
+    steps:
+      - name: Deploy AI runtime to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+
+          : "${VPS_HOST:?Missing VPS_HOST secret}"
+          : "${VPS_USER:?Missing VPS_USER secret}"
+          : "${VPS_SSH_KEY:?Missing VPS_SSH_KEY secret}"
+
+          ssh_port="${VPS_SSH_PORT:-22}"
+          deploy_path="${VPS_DEPLOY_PATH:-/opt/adventura/deploy}"
+          image_ref="${IMAGE_NAME}:${GITHUB_REF_NAME}"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/adventura_deploy_key
+          chmod 600 ~/.ssh/adventura_deploy_key
+          ssh-keyscan -p "$ssh_port" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          printf -v image_ref_q '%q' "$image_ref"
+          printf -v deploy_path_q '%q' "$deploy_path"
+
+          ssh -p "$ssh_port" -i ~/.ssh/adventura_deploy_key "${VPS_USER}@${VPS_HOST}" \
+            "IMAGE_REF=$image_ref_q DEPLOY_PATH=$deploy_path_q bash -s" <<'EOF'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+          test -f compose.registry.yml
+
+          touch .env
+          if grep -q '^ADVENTURA_AI_RUNTIME_IMAGE=' .env; then
+            sed -i "s|^ADVENTURA_AI_RUNTIME_IMAGE=.*|ADVENTURA_AI_RUNTIME_IMAGE=$IMAGE_REF|" .env
+          else
+            printf '\nADVENTURA_AI_RUNTIME_IMAGE=%s\n' "$IMAGE_REF" >> .env
+          fi
+
+          docker compose -f compose.registry.yml pull ai-runtime
+          docker compose -f compose.registry.yml up -d ai-runtime backend
+          docker compose -f compose.registry.yml ps
+
+          sleep 5
+          curl -fsS http://127.0.0.1/api/health
+          EOF
